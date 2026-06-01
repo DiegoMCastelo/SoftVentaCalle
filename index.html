@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pedidos WSP</title>
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#f5f5f0;color:#1a1a1a}
+input,select,textarea{width:100%;padding:11px 13px;border:1px solid rgba(0,0,0,0.2);border-radius:10px;background:#fff;color:#1a1a1a;font-size:15px;outline:none;font-family:inherit}
+input:focus,select:focus,textarea:focus{border-color:#1D9E75;box-shadow:0 0 0 3px rgba(29,158,117,0.12)}
+textarea{resize:none;line-height:1.5}
+button{font-family:inherit;cursor:pointer;border-radius:10px;font-size:15px;font-weight:500;transition:all 0.15s;border:none}
+label{display:block;font-size:12px;font-weight:600;color:#666;margin-bottom:5px;text-transform:uppercase;letter-spacing:0.3px}
+.field{margin-bottom:13px}
+.tab-bar{display:flex;background:#fff;border-bottom:1px solid rgba(0,0,0,0.1);position:sticky;top:0;z-index:10}
+.tab{flex:1;padding:13px 6px;font-size:12px;font-weight:600;color:#888;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;position:relative}
+.tab.active{color:#0F6E56;border-bottom-color:#1D9E75}
+.wrap{padding:16px;max-width:480px;margin:0 auto}
+.btn-wsp{width:100%;padding:15px;background:#25D366;color:#fff;border-radius:12px;font-size:17px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:4px}
+.btn-wsp:active{transform:scale(0.98)}
+.btn-wsp:disabled{background:#aaa;cursor:default}
+.btn-sm{padding:7px 11px;font-size:13px;border-radius:7px;border:1px solid rgba(0,0,0,0.15);background:#f5f5f5;color:#1a1a1a;cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+.btn-danger{color:#A32D2D;border-color:#f09595;background:#FCEBEB}
+.btn-primary{background:#1D9E75;color:#fff;border-color:#1D9E75}
+.btn-wsp-small{background:#25D366;color:#fff;border-color:#25D366}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0F6E56;color:#fff;padding:10px 20px;border-radius:8px;font-size:14px;z-index:100;white-space:nowrap}
+.toast.error{background:#A32D2D}
+.empty{text-align:center;padding:40px 16px;color:#888;font-size:14px}
+.loader{text-align:center;padding:40px;color:#888;font-size:14px}
+.hint{font-size:12px;color:#999;text-align:center;margin-top:10px}
+.card{background:#fff;border:1px solid rgba(0,0,0,0.08);border-radius:12px;padding:14px;margin-bottom:10px}
+.card.alerta{border-color:#EF9F27;background:#FAEEDA}
+.card.alerta-header{background:#EF9F27;color:#fff;border-radius:8px;padding:8px 12px;margin-bottom:8px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px}
+.estado-badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:12px;font-weight:600}
+.estado-sin{background:#f0f0f0;color:#666}
+.estado-interesado{background:#E1F5EE;color:#0F6E56}
+.estado-no{background:#FCEBEB;color:#A32D2D}
+.estado-cerrado{background:#E6F1FB;color:#185FA5}
+.badge-count{position:absolute;top:6px;right:50%;transform:translateX(120%);background:#EF9F27;color:#fff;border-radius:10px;font-size:10px;font-weight:700;padding:1px 5px;min-width:16px;text-align:center}
+.section-title{font-size:13px;font-weight:700;color:#444;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.dias-badge{font-size:11px;padding:2px 7px;border-radius:10px;font-weight:600;background:#FAEEDA;color:#854F0B}
+.dias-badge.ok{background:#E1F5EE;color:#0F6E56}
+.expandable{overflow:hidden;transition:max-height 0.2s ease}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState, useEffect} = React;
+
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx80BbTjX58QuBSvTfURvAClYy3OWCbxJfOc4nCZMfgoMzEgYxNqdo39h6iP3WCYytG/exec";
+
+const DEF_PRODUCTS = [
+  {id:1, nombre:"Producto A", mensaje:"Hola {nombre}! Te cuento sobre Producto A. Precio: $X. Incluye: ..."},
+  {id:2, nombre:"Producto B", mensaje:"Hola {nombre}! Te cuento sobre Producto B. Precio: $Y. Incluye: ..."},
+];
+
+const ESTADOS = ["Sin respuesta","Interesado","No interesado","Cerrado / vendido"];
+const ESTADO_CLASS = {"Sin respuesta":"estado-sin","Interesado":"estado-interesado","No interesado":"estado-no","Cerrado / vendido":"estado-cerrado"};
+
+const diasDesde = fechaStr => {
+  const partes = fechaStr.split(/[\/ ,:]/).filter(Boolean);
+  // formato dd/mm/yy hh:mm
+  if(partes.length >= 3){
+    const [d,m,y] = partes;
+    const anio = parseInt(y) + (parseInt(y) < 100 ? 2000 : 0);
+    const fecha = new Date(anio, parseInt(m)-1, parseInt(d));
+    const diff = Math.floor((new Date() - fecha) / (1000*60*60*24));
+    return diff;
+  }
+  return 0;
+};
+
+function App(){
+  const [tab, setTab] = useState("pedido");
+  const [products, setProducts] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [loadingProds, setLoadingProds] = useState(true);
+  const [nombre, setNombre] = useState("");
+  const [tel, setTel] = useState("");
+  const [prodId, setProdId] = useState("");
+  const [notas, setNotas] = useState("");
+  const [toast, setToast] = useState({msg:"",type:""});
+  const [editId, setEditId] = useState(null);
+  const [editData, setEditData] = useState({});
+  const [expandedId, setExpandedId] = useState(null);
+
+  const showToast = (msg, type="ok") => { setToast({msg,type}); setTimeout(()=>setToast({msg:"",type:""}),2500); };
+
+  const clientesLocales = () => JSON.parse(localStorage.getItem("clientes") || "[]");
+  const guardarClientes = c => { setClients(c); localStorage.setItem("clientes", JSON.stringify(c)); };
+
+  useEffect(()=>{
+    setClients(clientesLocales());
+    fetch(SCRIPT_URL)
+      .then(r=>r.json())
+      .then(data=>{
+        if(data && data.length > 0){ setProducts(data); }
+        else { setProducts(DEF_PRODUCTS); saveProductsToSheet(DEF_PRODUCTS); }
+        setLoadingProds(false);
+      })
+      .catch(()=>{
+        const local = localStorage.getItem("prods");
+        setProducts(local ? JSON.parse(local) : DEF_PRODUCTS);
+        setLoadingProds(false);
+      });
+  },[]);
+
+  const saveProductsToSheet = async prods => {
+    localStorage.setItem("prods", JSON.stringify(prods));
+    try {
+      await fetch(SCRIPT_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"saveProductos",productos:prods})});
+    } catch(e){}
+  };
+
+  const updateProducts = async prods => { setProducts(prods); await saveProductsToSheet(prods); };
+
+  const prod = products.find(p=>String(p.id)===String(prodId));
+
+  const handleSend = () => {
+    if(!nombre||!tel||!prodId){ showToast("Completá todos los campos","error"); return; }
+    const msg = prod.mensaje.replace(/\{nombre\}/gi, nombre);
+    const phone = tel.replace(/\D/g,"");
+    const fecha = new Date().toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"});
+    const nc = {id:Date.now(), nombre, tel, producto:prod.nombre, fecha, notas, estado:"Sin respuesta"};
+    const nuevos = [nc, ...clientesLocales()];
+    guardarClientes(nuevos);
+    window.open(`https://wa.me/54${phone}?text=${encodeURIComponent(msg)}`,"_blank");
+    fetch(SCRIPT_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"saveCliente",nombre,tel,producto:prod.nombre,fecha,notas,estado:"Sin respuesta"})})
+      .then(()=>showToast("✅ Guardado en Sheets")).catch(()=>showToast("⚠️ No se pudo guardar en Sheets","error"));
+    setNombre(""); setTel(""); setProdId(""); setNotas("");
+  };
+
+  const actualizarCliente = (id, cambios) => {
+    const updated = clients.map(c => c.id===id ? {...c,...cambios} : c);
+    guardarClientes(updated);
+    fetch(SCRIPT_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"updateCliente",id,...cambios})}).catch(()=>{});
+  };
+
+  const alertas = clients.filter(c => diasDesde(c.fecha) >= 7 && c.estado !== "Cerrado / vendido" && c.estado !== "No interesado");
+
+  const startEdit = p => { setEditId(p.id); setEditData({...p}); };
+  const saveEdit = async () => {
+    if(!editData.nombre||!editData.mensaje){ showToast("Completá nombre y mensaje","error"); return; }
+    const updated = products.map(p=>p.id===editId?editData:p);
+    await updateProducts(updated); setEditId(null); showToast("✅ Guardado");
+  };
+  const addProduct = async () => {
+    const np = {id:Date.now(),nombre:"Nuevo producto",mensaje:"Hola {nombre}! Te cuento sobre este producto..."};
+    const updated = [...products,np];
+    await updateProducts(updated); setEditId(np.id); setEditData({...np});
+  };
+  const deleteProduct = async id => { await updateProducts(products.filter(p=>p.id!==id)); };
+
+  return (
+    <div style={{maxWidth:480,margin:"0 auto",minHeight:"100vh"}}>
+      <div className="tab-bar">
+        {[["pedido","ti-send","PEDIDO"],["seguimiento","ti-clock","SEGUIMIENTO"],["productos","ti-package","PRODUCTOS"]].map(([k,ic,lb])=>(
+          <button key={k} className={`tab${tab===k?" active":""}`} onClick={()=>setTab(k)}>
+            <i className={`ti ${ic}`} style={{fontSize:16,display:"block",marginBottom:2}}></i>
+            {lb}
+            {k==="seguimiento" && alertas.length>0 && <span className="badge-count">{alertas.length}</span>}
+          </button>
+        ))}
+      </div>
+
+      {tab==="pedido" && (
+        <div className="wrap">
+          <div className="field"><label>Nombre</label><input value={nombre} onChange={e=>setNombre(e.target.value)} placeholder="Juan García" /></div>
+          <div className="field"><label>Teléfono</label><input value={tel} onChange={e=>setTel(e.target.value)} placeholder="3512345678" type="tel" /></div>
+          <div className="field">
+            <label>Producto</label>
+            <select value={prodId} onChange={e=>setProdId(e.target.value)}>
+              <option value="">Elegir...</option>
+              {products.map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}
+            </select>
+          </div>
+          <div className="field"><label>Notas (opcional)</label><textarea rows={2} value={notas} onChange={e=>setNotas(e.target.value)} placeholder="Ej: le interesó el precio, llamar el lunes..." /></div>
+          <button className="btn-wsp" onClick={handleSend} disabled={!nombre||!tel||!prodId}>
+            <i className="ti ti-brand-whatsapp" style={{fontSize:22}}></i>
+            Abrir WhatsApp
+          </button>
+          <p className="hint">Se guarda automáticamente en Google Sheets</p>
+        </div>
+      )}
+
+      {tab==="seguimiento" && (
+        <div className="wrap">
+          {alertas.length > 0 && (
+            <div style={{marginBottom:16}}>
+              <div className="section-title" style={{color:"#854F0B"}}>
+                <i className="ti ti-alert-triangle" style={{fontSize:16}}></i>
+                {alertas.length} contacto{alertas.length!==1?"s":""} sin novedad hace más de 7 días
+              </div>
+              {alertas.map(c=>(
+                <ClienteCard key={c.id} c={c} expanded={expandedId===c.id} onToggle={()=>setExpandedId(expandedId===c.id?null:c.id)} onUpdate={actualizarCliente} alerta products={products} />
+              ))}
+            </div>
+          )}
+          <div className="section-title">
+            <i className="ti ti-users" style={{fontSize:16}}></i>
+            Todos los contactos ({clients.length})
+          </div>
+          {clients.length===0 ? (
+            <div className="empty">Todavía no hay contactos</div>
+          ) : clients.map(c=>(
+            <ClienteCard key={c.id} c={c} expanded={expandedId===c.id} onToggle={()=>setExpandedId(expandedId===c.id?null:c.id)} onUpdate={actualizarCliente} products={products} />
+          ))}
+        </div>
+      )}
+
+      {tab==="productos" && (
+        <div className="wrap">
+          {loadingProds ? <div className="loader">Cargando...</div> : (
+            <>
+              {products.map(p=>(
+                <div key={p.id} className="card">
+                  {editId===p.id ? (
+                    <>
+                      <div className="field"><label>Nombre</label><input value={editData.nombre} onChange={e=>setEditData({...editData,nombre:e.target.value})} /></div>
+                      <div className="field"><label>Mensaje — usá {"{nombre}"} para personalizar</label><textarea rows={6} value={editData.mensaje} onChange={e=>setEditData({...editData,mensaje:e.target.value})} /></div>
+                      <div style={{display:"flex",gap:8}}>
+                        <button className="btn-sm btn-primary" onClick={saveEdit}>Guardar</button>
+                        <button className="btn-sm" onClick={()=>setEditId(null)}>Cancelar</button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p style={{fontWeight:700,fontSize:15,marginBottom:6}}>{p.nombre}</p>
+                      <p style={{fontSize:13,color:"#666",lineHeight:1.5,marginBottom:10}}>{p.mensaje.substring(0,80)}{p.mensaje.length>80?"…":""}</p>
+                      <div style={{display:"flex",gap:8}}>
+                        <button className="btn-sm" onClick={()=>startEdit(p)}><i className="ti ti-edit" style={{fontSize:13}}></i> Editar</button>
+                        <button className="btn-sm btn-danger" onClick={()=>deleteProduct(p.id)}><i className="ti ti-trash" style={{fontSize:13}}></i> Borrar</button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+              <button className="btn-sm btn-primary" style={{width:"100%",padding:12,marginTop:4,justifyContent:"center"}} onClick={addProduct}>
+                <i className="ti ti-plus" style={{fontSize:15}}></i> Agregar producto
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {toast.msg && <div className={`toast${toast.type==="error"?" error":""}`}>{toast.msg}</div>}
+    </div>
+  );
+}
+
+function ClienteCard({c, expanded, onToggle, onUpdate, alerta, products}){
+  const [notas, setNotas] = useState(c.notas||"");
+  const dias = diasDesde(c.fecha);
+  const prod = products ? products.find(p=>p.nombre===c.producto) : null;
+  const phone = (c.tel||"").replace(/\D/g,"");
+
+  const handleEstado = e => onUpdate(c.id, {estado: e.target.value});
+  const handleNotas = () => onUpdate(c.id, {notas});
+
+  const msgRecontacto = prod
+    ? prod.mensaje.replace(/\{nombre\}/gi, c.nombre)
+    : `Hola ${c.nombre}! Te escribo para hacer un seguimiento. ¿Pudiste ver la información que te envié?`;
+
+  return (
+    <div className={`card${alerta?" alerta":""}`} style={{marginBottom:10}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",cursor:"pointer"}} onClick={onToggle}>
+        <div style={{flex:1}}>
+          <p style={{fontWeight:700,fontSize:15}}>{c.nombre}</p>
+          <p style={{fontSize:13,color:"#666"}}>{c.tel} · {c.producto}</p>
+          <div style={{display:"flex",gap:6,marginTop:5,flexWrap:"wrap",alignItems:"center"}}>
+            <span className={`estado-badge ${ESTADO_CLASS[c.estado]||"estado-sin"}`}>{c.estado||"Sin respuesta"}</span>
+            <span className={`dias-badge${dias<7?" ok":""}`}>{dias === 0 ? "Hoy" : `Hace ${dias} días`}</span>
+          </div>
+        </div>
+        <i className={`ti ti-chevron-${expanded?"up":"down"}`} style={{fontSize:18,color:"#aaa",marginLeft:8,flexShrink:0,marginTop:4}}></i>
+      </div>
+
+      {expanded && (
+        <div style={{marginTop:12,borderTop:"1px solid rgba(0,0,0,0.08)",paddingTop:12}}>
+          <div className="field">
+            <label>Estado</label>
+            <select value={c.estado||"Sin respuesta"} onChange={handleEstado}>
+              {ESTADOS.map(e=><option key={e} value={e}>{e}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>Notas</label>
+            <textarea rows={2} value={notas} onChange={e=>setNotas(e.target.value)} onBlur={handleNotas} placeholder="Escribí observaciones..." />
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button className="btn-sm btn-wsp-small" onClick={()=>window.open(`https://wa.me/54${phone}`,"_blank")}>
+              <i className="ti ti-brand-whatsapp" style={{fontSize:14}}></i> Abrir chat
+            </button>
+            <button className="btn-sm btn-wsp-small" onClick={()=>window.open(`https://wa.me/54${phone}?text=${encodeURIComponent(msgRecontacto)}`,"_blank")}>
+              <i className="ti ti-send" style={{fontSize:14}}></i> Recontactar
+            </button>
+          </div>
+          <p style={{fontSize:11,color:"#aaa",marginTop:8}}>Contactado el {c.fecha}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
